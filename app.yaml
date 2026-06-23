@@ -1,0 +1,13 @@
+# Databricks Apps inject the port to listen on via DATABRICKS_APP_PORT; the
+# front-door routes to that port (not necessarily 8080). Use bash -c so the
+# env var expands (the exec-style arg list does not expand ${...}).
+command:
+  - "bash"
+  - "-c"
+  - "uvicorn app:app --host 0.0.0.0 --port ${DATABRICKS_APP_PORT:-8080}"
+
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: SOURCE_TABLE
+    value: "srikar_demo_workspace_catalog.fax_transcription_sutter.dummy_raw"

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Document Parsing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E%F0%9F%93%84%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="icon-btn" id="toggle-sidebar" title="Toggle document list" aria-label="Toggle sidebar">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 5h18M3 12h18M3 19h18"/></svg>
+      </button>
+      <span class="app-title">Document Parsing</span>
+      <span class="doc-count" id="doc-count">…</span>
+    </div>
+    <div class="topbar-center">
+      <span class="file-chip" id="file-chip" hidden>
+        <svg viewBox="0 0 24 24" width="15" height="15"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        <span id="current-file">—</span>
+      </span>
+    </div>
+    <div class="topbar-right">
+      <span class="source-table" id="source-table" title="Source table"></span>
+      <button class="icon-btn" id="refresh-btn" title="Reload data" aria-label="Reload data">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">Documents</div>
+      <ul class="doc-list" id="doc-list"></ul>
+    </aside>
+
+    <main class="main">
+      <div class="toolbar">
+        <div class="toolbar-group page-nav">
+          <button class="icon-btn" id="prev-page" title="Previous page" disabled>
+            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <span class="page-indicator"><b id="page-cur">1</b> / <span id="page-total">1</span></span>
+          <button class="icon-btn" id="next-page" title="Next page" disabled>
+            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+
+        <div class="toolbar-group toolbar-center-group">
+          <div class="legend-anchor">
+            <button class="pill-btn" id="legend-btn">
+              <svg viewBox="0 0 24 24" width="15" height="15"><rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              Legend
+            </button>
+            <div class="legend-popover" id="legend" hidden></div>
+          </div>
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="search" id="search" placeholder="Search extracted text" autocomplete="off" />
+            <span class="search-count" id="search-count" hidden></span>
+          </div>
+        </div>
+
+        <div class="toolbar-group toolbar-right-group">
+          <span class="page-label">Page <b id="page-label-num">1</b></span>
+          <div class="view-toggle" id="view-toggle">
+            <button data-view="formatted" class="active">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+              Formatted
+            </button>
+            <button data-view="json">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path d="M8 4 4 8l4 4M8 20l-4-4M16 4l4 4-4 4M16 20l4-4"/></svg>
+              JSON
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="split">
+        <section class="pane image-pane" id="image-pane">
+          <div class="image-stage">
+            <div class="image-wrap" id="image-wrap">
+              <img id="page-img" alt="Document page" />
+              <div class="boxes" id="boxes"></div>
+            </div>
+          </div>
+          <div class="zoom-controls">
+            <button class="icon-btn" id="zoom-out" title="Zoom out"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14"/></svg></button>
+            <button class="zoom-level" id="zoom-fit" title="Fit width">Fit</button>
+            <button class="icon-btn" id="zoom-in" title="Zoom in"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg></button>
+          </div>
+        </section>
+
+        <section class="pane text-pane" id="text-pane">
+          <div class="formatted" id="formatted"></div>
+          <div class="json-view" id="json-view" hidden></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="tooltip" id="tooltip" hidden></div>
+  <div class="overlay-msg" id="overlay-msg" hidden></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

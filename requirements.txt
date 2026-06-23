@@ -1,0 +1,3 @@
+# FastAPI + uvicorn are pre-installed in the Databricks Apps runtime.
+Pillow>=10.3.0
+databricks-sdk>=0.30.0
