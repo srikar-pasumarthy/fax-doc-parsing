@@ -14,6 +14,7 @@ const TYPE_META = {
 };
 const DEFAULT_META = { label: "Element", color: "#64748B" };
 const meta = (t) => TYPE_META[t] || { ...DEFAULT_META, label: t || "Element" };
+const EMPTY_SET = new Set();
 
 function hexToRgba(hex, a) {
   const n = parseInt(hex.slice(1), 16);
@@ -30,6 +31,8 @@ const state = {
   zoom: 1,
   fitWidth: 820,
   selectedId: null,
+  editMode: false,
+  edited: {}, // docId -> Set of edited element ids (for the persistent marker)
 };
 
 const $ = (id) => document.getElementById(id);
@@ -42,7 +45,7 @@ const el = {
   search: $("search"), searchCount: $("search-count"),
   prevPage: $("prev-page"), nextPage: $("next-page"),
   pageCur: $("page-cur"), pageTotal: $("page-total"), pageLabelNum: $("page-label-num"),
-  viewToggle: $("view-toggle"),
+  viewToggle: $("view-toggle"), editBtn: $("edit-btn"),
   tooltip: $("tooltip"), overlay: $("overlay-msg"),
   zoomIn: $("zoom-in"), zoomOut: $("zoom-out"), zoomFit: $("zoom-fit"),
 };
@@ -205,6 +208,7 @@ function renderText() {
     wrap.className = `fmt-el fmt-${e.type}`;
     wrap.dataset.elid = String(e.id);
     wrap.dataset.type = e.type;
+    if ((state.edited[state.docId] || EMPTY_SET).has(String(e.id))) wrap.classList.add("edited");
     wrap.style.setProperty("--cc", m.color);
     wrap.style.setProperty("--hl", hexToRgba(m.color, 0.08));
 
@@ -239,6 +243,7 @@ function renderText() {
   }));
   el.jsonView.innerHTML = syntaxHighlight(JSON.stringify(jsonData, null, 2));
   setView(state.view);
+  applyEditMode(); // re-wire editability on the freshly rendered elements
 }
 
 /* --------------------------- Linking & select --------------------------- */
@@ -392,6 +397,109 @@ function setView(view) {
   for (const b of el.viewToggle.children) b.classList.toggle("active", b.dataset.view === view);
 }
 
+/* -------------------------------- Editing ------------------------------- */
+function toggleEditMode() {
+  state.editMode = !state.editMode;
+  if (state.editMode) {
+    if (state.view !== "formatted") setView("formatted"); // editing happens in Formatted view
+    if (el.search.value) { el.search.value = ""; applySearch(""); } // avoid <mark> in editable content
+  }
+  applyEditMode();
+}
+function applyEditMode() {
+  const on = state.editMode;
+  el.editBtn.classList.toggle("active", on);
+  el.textPane.classList.toggle("editing", on);
+  el.formatted.querySelectorAll(".fmt-el").forEach((f) => editableTargets(f).forEach((n) => setEditable(n, f, on)));
+}
+function editableTargets(fmtEl) {
+  const body = fmtEl.querySelector(".fmt-body");
+  if (!body) return [];
+  if (fmtEl.dataset.type === "table") return Array.from(body.querySelectorAll("td, th"));
+  return [body];
+}
+function setEditable(node, fmtEl, on) {
+  if (!on) {
+    node.removeAttribute("contenteditable");
+    node.removeAttribute("data-editable");
+    return;
+  }
+  node.setAttribute("contenteditable", "true");
+  node.setAttribute("data-editable", "1");
+  if (node._wired) return;
+  node._wired = true;
+  node.addEventListener("input", () => { fmtEl._dirty = true; });
+  node.addEventListener("blur", () => saveElement(fmtEl));
+  node.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") { ev.preventDefault(); revertElement(fmtEl); node.blur(); return; }
+    if (ev.key === "Enter") {
+      const multiline = fmtEl.dataset.type === "text";
+      if (multiline && !(ev.metaKey || ev.ctrlKey)) return; // newline within multi-line text
+      ev.preventDefault();
+      node.blur(); // commit
+    }
+  });
+}
+function serializeTable(body) {
+  const table = body.querySelector("table");
+  if (!table) return body.innerText;
+  const clone = table.cloneNode(true);
+  clone.querySelectorAll("[contenteditable]").forEach((n) => n.removeAttribute("contenteditable"));
+  clone.querySelectorAll("[data-editable]").forEach((n) => n.removeAttribute("data-editable"));
+  return clone.outerHTML;
+}
+async function saveElement(fmtEl) {
+  if (!fmtEl._dirty) return;
+  fmtEl._dirty = false;
+  const elid = fmtEl.dataset.elid;
+  const isTable = fmtEl.dataset.type === "table";
+  const body = fmtEl.querySelector(".fmt-body");
+  // innerText preserves line breaks (good for multi-line "text"), but can reflect CSS
+  // text-transform (uppercase) on headers; textContent never does. Pick per type.
+  const raw = fmtEl.dataset.type === "text" ? body.innerText : body.textContent;
+  const content = isTable ? serializeTable(body) : raw.replace(/ /g, " ");
+  setStatus(fmtEl, "saving");
+  try {
+    await putJson(`/api/documents/${encodeURIComponent(state.docId)}/elements/${elid}`, { content });
+    fmtEl._origHtml = isTable ? content : body.innerHTML; // clean baseline
+    fmtEl.dataset.text = (body.textContent || "").toLowerCase();
+    fmtEl.classList.add("edited");
+    (state.edited[state.docId] || (state.edited[state.docId] = new Set())).add(elid);
+    const e = state.doc.elements.find((x) => String(x.id) === elid);
+    if (e) e.content = content;
+    setStatus(fmtEl, "saved");
+  } catch (err) {
+    fmtEl._dirty = true; // permit retry on next blur
+    setStatus(fmtEl, "error", err.message);
+  }
+}
+function revertElement(fmtEl) {
+  const body = fmtEl.querySelector(".fmt-body");
+  if (fmtEl._origHtml != null) body.innerHTML = fmtEl._origHtml;
+  fmtEl._dirty = false;
+  const s = fmtEl.querySelector(".save-status");
+  if (s) s.remove();
+  if (state.editMode) editableTargets(fmtEl).forEach((n) => setEditable(n, fmtEl, true));
+}
+function setStatus(fmtEl, kind, msg) {
+  let s = fmtEl.querySelector(".save-status");
+  if (!s) { s = document.createElement("span"); s.className = "save-status"; fmtEl.appendChild(s); }
+  s.className = "save-status " + kind;
+  s.textContent = kind === "saving" ? "Saving…" : kind === "saved" ? "Saved" : "Save failed";
+  s.title = kind === "error" && msg ? msg : "";
+  clearTimeout(fmtEl._statusT);
+  if (kind === "saved") fmtEl._statusT = setTimeout(() => { if (s.classList.contains("saved")) s.remove(); }, 1600);
+}
+async function putJson(url, body) {
+  const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) {
+    let detail = `${r.status} ${r.statusText}`;
+    try { const j = await r.json(); if (j.detail) detail = j.detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  return r.json();
+}
+
 /* --------------------------------- Zoom --------------------------------- */
 function computeFit() {
   const avail = el.imagePane.clientWidth - 56; // 28px padding each side
@@ -430,6 +538,7 @@ function wireEvents() {
   });
 
   el.search.addEventListener("input", (e) => applySearch(e.target.value));
+  el.editBtn.addEventListener("click", toggleEditMode);
   el.viewToggle.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-view]");
     if (btn) { setView(btn.dataset.view); if (el.search.value) applySearch(el.search.value); }

@@ -70,17 +70,18 @@ class Backend:
         return self._client
 
     # -- Parsed document metadata -----------------------------------------
-    def _run_query(self, statement: str) -> list[list[Any]]:
+    def _exec(self, statement: str, parameters: list | None = None):
         if not WAREHOUSE_ID:
             raise RuntimeError(
                 "DATABRICKS_WAREHOUSE_ID is not set. Bind a SQL warehouse "
                 "resource (key `sql-warehouse`) to the app."
             )
-        resp = self.client.statement_execution.execute_statement(
-            warehouse_id=WAREHOUSE_ID,
-            statement=statement,
-            wait_timeout="50s",
+        kwargs: dict[str, Any] = dict(
+            warehouse_id=WAREHOUSE_ID, statement=statement, wait_timeout="50s"
         )
+        if parameters:
+            kwargs["parameters"] = parameters
+        resp = self.client.statement_execution.execute_statement(**kwargs)
         # Poll if the warehouse was cold and the statement is still running.
         statement_id = resp.statement_id
         deadline = time.time() + 120
@@ -99,9 +100,25 @@ class Backend:
             if resp.status and resp.status.error:
                 msg = resp.status.error.message or ""
             raise RuntimeError(f"SQL statement {state}: {msg}")
+        return resp
+
+    def _run_query(self, statement: str) -> list[list[Any]]:
+        resp = self._exec(statement)
         if not resp.result or not resp.result.data_array:
             return []
         return resp.result.data_array
+
+    def _persist(self, path: str, parsed_json: str) -> None:
+        """Write the full (edited) parsed JSON back to the table's VARIANT column."""
+        from databricks.sdk.service.sql import StatementParameterListItem
+
+        self._exec(
+            f"UPDATE {SOURCE_TABLE} SET parsed = PARSE_JSON(:parsed) WHERE path = :path",
+            parameters=[
+                StatementParameterListItem(name="parsed", value=parsed_json),
+                StatementParameterListItem(name="path", value=path),
+            ],
+        )
 
     def _build_doc(self, path: str, parsed_json: str) -> dict[str, Any]:
         parsed = json.loads(parsed_json)
@@ -164,6 +181,7 @@ class Backend:
             "type_counts": type_counts,
             "elements": elements,
             "boxes_by_page": boxes_by_page,
+            "parsed": parsed,  # full ai_parse_document JSON, mutated + persisted on edit
         }
 
     def load(self, force: bool = False) -> list[dict[str, Any]]:
@@ -216,6 +234,33 @@ class Backend:
             "path": doc["path"],
             "pages": pages,
             "elements": doc["elements"],
+        }
+
+    def update_element(self, doc_id: str, element_id: int, new_content: str) -> dict[str, Any]:
+        """Set an element's `content`, persist the whole row's parsed JSON, update cache."""
+        self.load()
+        doc = self._docs_by_id.get(doc_id)
+        if not doc:
+            raise KeyError(f"Unknown document: {doc_id}")
+        elements = (doc["parsed"].get("document") or {}).get("elements") or []
+        target = next((e for e in elements if e.get("id") == element_id), None)
+        if target is None:
+            raise KeyError(f"Unknown element {element_id} in {doc_id}")
+
+        with self._lock:
+            target["content"] = new_content
+            # Persist the full parsed JSON back to the VARIANT column.
+            self._persist(doc["path"], json.dumps(doc["parsed"]))
+            # Keep the processed cache (served by the API) consistent.
+            for e in doc["elements"]:
+                if e["id"] == element_id:
+                    e["content"] = new_content
+                    break
+        return {
+            "id": element_id,
+            "type": target.get("type"),
+            "content": new_content,
+            "confidence": target.get("confidence"),
         }
 
     # -- Image rendering ---------------------------------------------------

@@ -13,8 +13,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from backend import SOURCE_TABLE, backend
+
+
+class ElementUpdate(BaseModel):
+    content: str
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
@@ -76,6 +81,16 @@ def get_document(doc_id: str):
     if doc is None:
         raise HTTPException(status_code=404, detail=f"Unknown document: {doc_id}")
     return doc
+
+
+@app.put("/api/documents/{doc_id}/elements/{element_id}")
+def update_element(doc_id: str, element_id: int, body: ElementUpdate):
+    try:
+        return backend.update_element(doc_id, element_id, body.content)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 @app.get("/api/documents/{doc_id}/pages/{page}/image.png")

@@ -232,6 +232,30 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .fmt-table input[type=checkbox] { width: 15px; height: 15px; margin-right: 5px; vertical-align: -2px; accent-color: var(--accent); }
 .fmt-table mark, .fmt-el mark { background: #ffe58a; color: inherit; border-radius: 2px; padding: 0 1px; }
 
+/* ---------- Edit mode ---------- */
+.text-pane.editing .fmt-body[data-editable] {
+  outline: 1px dashed var(--border-strong); outline-offset: 3px; border-radius: 4px; cursor: text;
+  transition: outline-color .12s, background .12s;
+}
+.text-pane.editing .fmt-body[data-editable]:hover { outline-color: var(--accent); background: var(--accent-soft); }
+.text-pane.editing [data-editable]:focus { outline: 2px solid var(--accent); background: #fff; box-shadow: 0 0 0 3px rgba(37,99,235,.14); }
+.text-pane.editing .fmt-table td[data-editable], .text-pane.editing .fmt-table th[data-editable] { cursor: text; }
+.text-pane.editing .fmt-table td[data-editable]:hover, .text-pane.editing .fmt-table th[data-editable]:hover { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.text-pane.editing .fmt-table td[data-editable]:focus { background: #fff; box-shadow: inset 0 0 0 2px var(--accent); border-radius: 2px; }
+
+.fmt-el.edited::after {
+  content: ""; position: absolute; left: -2px; top: 2px; bottom: 2px; width: 3px;
+  background: #16a34a; border-radius: 3px;
+}
+.save-status {
+  position: absolute; top: 3px; right: -2px; font-size: 10.5px; font-weight: 700;
+  padding: 1px 8px; border-radius: 20px; pointer-events: none; z-index: 2;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.save-status.saving { background: #fef3c7; color: #92400e; }
+.save-status.saved  { background: #dcfce7; color: #166534; }
+.save-status.error  { background: #fee2e2; color: #b42318; }
+
 /* ---------- Tooltip ---------- */
 .tooltip {
   position: fixed; z-index: 60; background: #14171c; color: #fff; font-size: 12px;
